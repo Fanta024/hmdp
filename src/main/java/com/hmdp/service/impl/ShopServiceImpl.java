@@ -12,10 +12,10 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_TTL;
+import static com.hmdp.utils.RedisConstants.*;
 
 /**
  * <p>
@@ -36,13 +36,17 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         String data = stringRedisTemplate.opsForValue().get(key);
         if (StrUtil.isNotBlank(data))
         {
-//            Shop shop = JSONUtil.toBean(data, Shop.class);
-//            System.out.println(shop);
             System.out.println("返回");
             return Result.ok(JSONUtil.toJsonStr(data));
         }
+        if(Objects.equals(data, "")){
+            return Result.fail("店铺不存在");
+        }
+
         Shop shop = this.getById(id);
         if(shop==null){
+            //存入空值到redis 解决缓存穿透
+            stringRedisTemplate.opsForValue().set(key, "",CACHE_NULL_TTL, TimeUnit.MINUTES);
             return Result.fail("查找失败");
         }
         stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(shop),CACHE_SHOP_TTL, TimeUnit.MINUTES);
