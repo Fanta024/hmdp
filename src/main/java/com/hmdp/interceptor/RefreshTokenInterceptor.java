@@ -21,7 +21,6 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
     }
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        System.out.println("RefreshTokenInterceptor");
         //获取请求头的token
         String token = request.getHeader("authorization");
         String key = RedisConstants.LOGIN_USER_KEY + token;
