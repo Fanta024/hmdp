@@ -10,6 +10,7 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.utils.CacheClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,14 +38,18 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+    @Resource
+    private CacheClient cacheClient;
 
     @Override
     public Result queryById(Long id) {
 //        Shop shop = queryWithCacheThrow(id);
+        Shop shop = cacheClient.queryWithCacheThrow(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.SECONDS);
+//        Shop shop = cacheClient.queryWithMutex(CACHE_SHOP_KEY, id, Shop.class, this::getById);
 
+//        Shop shop = queryWithMutex(id );
+//        Shop shop = queryWithLogicDelete(id);
 
-//        Shop shop = queryWithMutex(id);
-        Shop shop = queryWithLogicDelete(id);
         if (shop == null) {
             return Result.fail("商店不存在");
         }
@@ -166,7 +171,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         return shop;
 
     }
-    public <T> void saveShop2Redis(Long id,Long time,TimeUnit timeUnit) throws InterruptedException {
+    public void saveShop2Redis(Long id, Long time, TimeUnit timeUnit) throws InterruptedException {
         //从数据库拿去最新数据存入redis
         Shop shop = getById(id);
         Thread.sleep(200);
