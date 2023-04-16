@@ -46,10 +46,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 //        Shop shop = queryWithCacheThrow(id);
         Shop shop = cacheClient.queryWithCacheThrow(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.SECONDS);
 //        Shop shop = cacheClient.queryWithMutex(CACHE_SHOP_KEY, id, Shop.class, this::getById);
-
 //        Shop shop = queryWithMutex(id );
 //        Shop shop = queryWithLogicDelete(id);
-
         if (shop == null) {
             return Result.fail("商店不存在");
         }
