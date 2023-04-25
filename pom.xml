@@ -57,12 +57,7 @@
             <artifactId>hutool-all</artifactId>
             <version>5.7.17</version>
         </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-devtools</artifactId>
-            <optional>true</optional>
-            <scope>true</scope>
-        </dependency>
+
         <dependency>
             <groupId>org.aspectj</groupId>
             <artifactId>aspectjweaver</artifactId>
