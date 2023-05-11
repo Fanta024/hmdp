@@ -1,5 +1,6 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
 import com.hmdp.entity.VoucherOrder;
@@ -15,6 +16,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.connection.stream.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -22,8 +24,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -50,6 +55,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private RedissonClient redissonClient;
 
+    public static final String queueName = "stream.orders";
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
 
     static {
@@ -57,25 +63,72 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
         SECKILL_SCRIPT.setResultType(Long.class);
     }
-    private BlockingQueue<VoucherOrder> orderTasks= new ArrayBlockingQueue<>(1024*1024); //设置阻塞队列长度
+
     private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
 
     IVoucherOrderService proxy;
+
     @PostConstruct
-    private void init(){
+    private void init() {
         SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandler());
     }
 
-    private class VoucherOrderHandler implements Runnable{
+    private class VoucherOrderHandler implements Runnable {
 
         @Override
         public void run() {
-            while(true){
+            while (true) {
                 try {
-                    VoucherOrder voucherOrder = orderTasks.take();
+                    //获取消息队列的订单 xreadgroup group g1 c1 count 1 block 2000 streams s1 >
+                    List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
+                            Consumer.from("g1", "c1"),
+                            StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
+                            StreamOffset.create(queueName, ReadOffset.lastConsumed())
+                    );
+                    if (list == null || list.isEmpty()) {
+                        continue;
+                    }
+                    MapRecord<String, Object, Object> record = list.get(0);
+                    Map<Object, Object> value = record.getValue();
+                    VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(value, new VoucherOrder(), true);
                     handleVoucherOrder(voucherOrder);
+                    //处理成功 确认消息 xack key grop id
+                    stringRedisTemplate.opsForStream().acknowledge(queueName, "g1", record.getId());
                 } catch (Exception e) {
-                    log.error("处理订单异常",e);
+                    log.error("处理订单异常", e);
+                    //未确认
+                    pendingListHandler();
+                }
+            }
+        }
+
+        private void pendingListHandler() {
+            while (true) {
+                try {
+                    List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
+                            Consumer.from("g1", "c1"),
+                            StreamReadOptions.empty().count(1),
+                            StreamOffset.create(queueName, ReadOffset.from("0"))
+                    );
+                    if (list == null || list.isEmpty()) {
+                        //没有消息
+                        break;
+                    }
+                    MapRecord<String, Object, Object> record = list.get(0);
+                    Map<Object, Object> value = record.getValue();
+                    VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(value, new VoucherOrder(), true);
+                    //获取成功 可以下单
+                    handleVoucherOrder(voucherOrder);
+                    //处理成功 确认消息
+                    stringRedisTemplate.opsForStream().acknowledge(queueName, "g1", record.getId());
+                } catch (Exception e) {
+                    log.error("pendList处理异常");
+                    //休眠一段时间再进入循环避免频繁
+                    try {
+                        Thread.sleep(20);
+                    } catch (InterruptedException ex) {
+                        throw new RuntimeException(ex);
+                    }
                 }
             }
         }
@@ -90,7 +143,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Long userId = voucherOrder.getUserId();
         RLock lock = redissonClient.getLock("VoucherOrder:" + userId);
         boolean isLock = lock.tryLock();
-        if(!isLock){
+        if (!isLock) {
             log.error("重复下单");
         }
         try {
@@ -100,9 +153,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
             proxy.createVoucher4VoucherOrder(voucherOrder);
             //return createVoucher(voucherId); 事务会失效  因为 用的是this.createVoucher  而IVoucherOrderService没有事务
-        }catch (Exception e){
+        } catch (Exception e) {
             throw e;
-        }finally {
+        } finally {
 //            simpleRedisLock.unLock();
             lock.unlock();
         }
@@ -112,40 +165,31 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Override
     public Result seckillVoucher(Long voucherId) {
         SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
-        if(voucher.getBeginTime().isAfter(LocalDateTime.now())){
+        if (voucher.getBeginTime().isAfter(LocalDateTime.now())) {
             return Result.fail("秒杀还未开始");
         }
-        if(voucher.getEndTime().isBefore(LocalDateTime.now())){
+        if (voucher.getEndTime().isBefore(LocalDateTime.now())) {
             return Result.fail("秒杀已结束");
         }
-        if(voucher.getStock()<1){
+        if (voucher.getStock() < 1) {
             return Result.fail("已抢完");
         }
-
+        //有购买资格 创建订单放入消息队列
+        VoucherOrder voucherOrder = new VoucherOrder();
+        long orderId = idWorker.nexId("order");
         Long userId = UserHolder.getUser().getId();
+        //执行lua脚本
         Long rs = stringRedisTemplate.execute(
                 SECKILL_SCRIPT,
                 Collections.emptyList(),
                 voucherId.toString(),
-                userId.toString()
+                userId.toString(),
+                String.valueOf(orderId)
         );
-
         int r = rs.intValue();
         if (r != 0) {
-            return Result.fail(r==1?"库存不足":"重复下单");
+            return Result.fail(r == 1 ? "库存不足" : "重复下单");
         }
-        //有购买资格 创建订单放入阻塞队列
-        VoucherOrder voucherOrder = new VoucherOrder();
-        long orderId = idWorker.nexId("order");
-        //订单id
-        voucherOrder.setId(orderId);
-        //用户id
-        voucherOrder.setUserId(userId);
-        //优惠券id
-        voucherOrder.setVoucherId(voucherId);
-
-        orderTasks.add(voucherOrder);
-
         proxy = (IVoucherOrderService) AopContext.currentProxy();
 
         //返回订单id
@@ -177,7 +221,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     @Transactional
-    public void createVoucher4VoucherOrder(VoucherOrder voucherOrder){
+    public void createVoucher4VoucherOrder(VoucherOrder voucherOrder) {
         Long voucherId = voucherOrder.getVoucherId();
         Long userId = voucherOrder.getUserId();
         Integer count = query().eq("voucher_id", voucherId).eq("user_id", userId).count();
