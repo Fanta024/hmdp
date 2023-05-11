@@ -59,7 +59,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         }
         //发送验证码
         System.out.println("验证码"+code);
-        return Result.ok();
+        return Result.ok(code);
     }
 
     @Override
@@ -68,7 +68,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             return Result.fail("手机号格式错误");
         }
         String cacheCode = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY+loginForm.getPhone());
-        System.out.println(cacheCode);
         String code = loginForm.getCode();
         if (cacheCode == null || !cacheCode.equals(code)) {
             // 不一致，报错

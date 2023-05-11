@@ -1,6 +1,11 @@
 server:
   port: 8081
-
+  servlet:
+    encoding:
+      charset: utf-8
+      force: true
+  tomcat:
+    uri-encoding: utf-8
 spring:
   application:
     name: hmdp
