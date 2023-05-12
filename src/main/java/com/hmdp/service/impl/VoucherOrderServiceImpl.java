@@ -122,7 +122,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     //处理成功 确认消息
                     stringRedisTemplate.opsForStream().acknowledge(queueName, "g1", record.getId());
                 } catch (Exception e) {
-                    log.error("pendList处理异常");
+                    log.error("pendingList处理异常");
                     //休眠一段时间再进入循环避免频繁
                     try {
                         Thread.sleep(20);
@@ -175,7 +175,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("已抢完");
         }
         //有购买资格 创建订单放入消息队列
-        VoucherOrder voucherOrder = new VoucherOrder();
         long orderId = idWorker.nexId("order");
         Long userId = UserHolder.getUser().getId();
         //执行lua脚本
