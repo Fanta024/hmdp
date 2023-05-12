@@ -3,14 +3,15 @@ package com.hmdp.controller;
 
 import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
+import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.UserInfo;
 import com.hmdp.service.IUserInfoService;
 import com.hmdp.service.IUserService;
+import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
-import javax.servlet.http.HttpSession;
 
 /**
  * <p>
@@ -56,18 +57,21 @@ public class UserController {
 
     /**
      * 登出功能
+     *
      * @return 无
      */
     @PostMapping("/logout")
-    public Result logout(){
+    public Result logout() {
         // TODO 实现登出功能
-        return Result.fail("功能未完成");
+        UserHolder.removeUser();
+        return Result.ok("退出成功");
     }
 
     @GetMapping("/me")
-    public Result me(){
+    public Result me() {
         // TODO 获取当前登录的用户并返回
-        return Result.fail("功能未完成");
+        UserDTO user = UserHolder.getUser();
+        return Result.ok(user);
     }
 
     @GetMapping("/info/{id}")

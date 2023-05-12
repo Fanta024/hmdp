@@ -11,17 +11,13 @@ import com.hmdp.entity.User;
 import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.RegexUtils;
-import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
-import javax.servlet.http.HttpSession;
-import java.nio.file.CopyOption;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.utils.RedisConstants.*;
@@ -64,18 +60,24 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
     @Override
     public Result login(LoginFormDTO loginForm) {
-        if(RegexUtils.isPhoneInvalid(loginForm.getPhone())){
+        if (RegexUtils.isPhoneInvalid(loginForm.getPhone())) {
             return Result.fail("手机号格式错误");
         }
-        String cacheCode = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY+loginForm.getPhone());
-        String code = loginForm.getCode();
-        if (cacheCode == null || !cacheCode.equals(code)) {
-            // 不一致，报错
-            return Result.fail("验证码错误");
+        User user = new User();
+        if (loginForm.getPassword() != null) {
+            user = query().eq("phone", loginForm.getPhone()).eq("password", loginForm.getPassword()).one();
         }
-        User user = query().eq("phone", loginForm.getPhone()).one();
+        if (loginForm.getCode() != null) {
+            String cacheCode = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY + loginForm.getPhone());
+            String code = loginForm.getCode();
+            if (cacheCode == null || !cacheCode.equals(code)) {
+                // 不一致，报错
+                return Result.fail("验证码错误");
+            }
+            user = query().eq("phone", loginForm.getPhone()).one();
+        }
         //用户不存在创建用户 并保存登录状态
-        if(user==null){
+        if (user == null) {
             user = createUserWithPhone(loginForm.getPhone());
         }
         //生成token 作为登录令牌
@@ -84,12 +86,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         //脱敏
         UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
         //将user转为map
-        Map<String, Object> userMap = BeanUtil.beanToMap(userDTO,new HashMap<>(),
-                CopyOptions.create().setIgnoreNullValue(true).setFieldValueEditor((k,v)-> {
-                    System.out.println(k+"==="+v);
-                    return v.toString();
-                }
-        ));
+        Map<String, Object> userMap = BeanUtil.beanToMap(userDTO, new HashMap<>(),
+                CopyOptions.create().setIgnoreNullValue(true).setFieldValueEditor((k, v) -> {
+                            System.out.println(k + "===" + v);
+                            return v.toString();
+                        }
+                ));
         //存储
         String tokenKey = "login:token:" + token;
         stringRedisTemplate.opsForHash().putAll(tokenKey,userMap);
