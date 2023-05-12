@@ -66,6 +66,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         User user = new User();
         if (loginForm.getPassword() != null) {
             user = query().eq("phone", loginForm.getPhone()).eq("password", loginForm.getPassword()).one();
+            if (user == null) {
+                return Result.fail("密码错误");
+            }
         }
         if (loginForm.getCode() != null) {
             String cacheCode = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY + loginForm.getPhone());
