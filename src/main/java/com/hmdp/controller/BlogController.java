@@ -39,12 +39,13 @@ public class BlogController {
         return Result.ok(blog.getId());
     }
 
+    /**
+     * @param id 博客id
+     * @return blog
+     */
     @PutMapping("/like/{id}")
     public Result likeBlog(@PathVariable("id") Long id) {
-        // 修改点赞数量
-        blogService.update()
-                .setSql("liked = liked + 1").eq("id", id).update();
-        return Result.ok();
+        return blogService.likeBlog(id);
     }
 
     @GetMapping("/of/me")
