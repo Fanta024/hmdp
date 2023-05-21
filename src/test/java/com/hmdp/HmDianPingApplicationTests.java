@@ -17,6 +17,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.runner.RunWith;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.geo.Point;
+import org.springframework.data.redis.connection.RedisGeoCommands;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.test.web.servlet.MockMvc;
@@ -24,6 +27,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
 
 import javax.annotation.Resource;
+import java.awt.*;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -31,15 +35,19 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
+
+import static com.hmdp.utils.RedisConstants.SHOP_GEO_KEY;
 
 @SpringBootTest
 @RunWith(SpringRunner.class)
 @AutoConfigureMockMvc
 public class HmDianPingApplicationTests {
-//    @Resource
+    //    @Resource
 //    private ShopServiceImpl shopService;
 //    @Resource
 //    private RedisIdWorker redisIdWorker;
@@ -76,12 +84,18 @@ public class HmDianPingApplicationTests {
 
     @Resource
     private ObjectMapper mapper;
+    @Resource
+    private ShopServiceImpl shopService;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
     @Test
-    public void test3(){
+    public void test3() {
         LocalDateTime localDateTime = LocalDateTime.of(2023, 1, 1, 0, 0, 0, 0);
         long second = localDateTime.toEpochSecond(ZoneOffset.UTC);
         System.out.println(second);
     }
+
     @Test
     @SneakyThrows
     @DisplayName("登录1000个用户，并输出到文件中")
@@ -148,5 +162,26 @@ public class HmDianPingApplicationTests {
         }
         bw.close();
         System.out.println("写入完成！");
+    }
+
+    @Test
+    public void shopGroup() {
+        //查询所有shop
+        List<Shop> shopList = shopService.list();
+        Map<Long, List<Shop>> map = shopList.stream().collect(Collectors.groupingBy(Shop::getTypeId));
+        for (Map.Entry<Long, List<Shop>> entry : map.entrySet()) {
+            Long typeId = entry.getKey();
+            String key = SHOP_GEO_KEY + typeId;
+            List<RedisGeoCommands.GeoLocation<String>> locations = new ArrayList<>(map.size());
+            List<Shop> shops = entry.getValue();
+            for (Shop shop : shops) {
+//                 stringRedisTemplate.opsForGeo().add(key, new Point(shop.getX(), shop.getY()), shop.getId().toString());
+                locations.add(new RedisGeoCommands.GeoLocation<>(
+                        shop.getId().toString(),
+                        new Point(shop.getX(), shop.getY())
+                ));
+            }
+            stringRedisTemplate.opsForGeo().add(key, locations);
+        }
     }
 }

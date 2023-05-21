@@ -24,6 +24,11 @@ spring:
         max-idle: 10
         min-idle: 1
         time-between-eviction-runs: 10s
+      cluster:
+        refresh:
+          adaptive: true
+          #20秒自动刷新一次
+          period: 20
   jackson:
     default-property-inclusion: non_null # JSON处理时忽略非空字段
 mybatis-plus:
