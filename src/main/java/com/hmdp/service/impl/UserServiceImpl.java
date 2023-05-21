@@ -11,11 +11,16 @@ import com.hmdp.entity.User;
 import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.RegexUtils;
+import com.hmdp.utils.UserHolder;
+import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -97,17 +102,75 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                 ));
         //存储
         String tokenKey = "login:token:" + token;
-        stringRedisTemplate.opsForHash().putAll(tokenKey,userMap);
+        stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
         //设置过期时间
-        stringRedisTemplate.expire(tokenKey,LOGIN_USER_TTL,TimeUnit.SECONDS);
+        stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.SECONDS);
         //返回token给前端
         return Result.ok(token);
+    }
+
+    @Override
+    public Result sign() {
+        UserDTO user = UserHolder.getUser();
+        if (user == null) {
+            return Result.fail("未登录");
+        }
+        Long userId = user.getId();
+        //获取当前时间   userId+2023/05
+        LocalDateTime now = LocalDateTime.now();
+
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyy:MM"));
+        String key = USER_SIGN_KEY + userId + keySuffix;
+
+        //当前时间是这个月的第几天
+        int dayOfMonth = now.getDayOfMonth();
+        Boolean isSuccess = stringRedisTemplate.opsForValue().setBit(key, dayOfMonth - 1, true);
+        if (Boolean.FALSE.equals(isSuccess)) {
+            return Result.fail("服务器异常");
+        }
+        return Result.ok("签到成功");
+    }
+
+    @Override
+    public Result signCount() {
+        UserDTO user = UserHolder.getUser();
+        if (user == null) {
+            return Result.fail("未登录");
+        }
+        Long userId = user.getId();
+        //获取当前时间   userId+2023/05
+        LocalDateTime now = LocalDateTime.now();
+
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyy:MM"));
+        String key = USER_SIGN_KEY + userId + keySuffix;
+
+        int dayOfMonth = now.getDayOfMonth();
+
+        List<Long> bitField = stringRedisTemplate.opsForValue().bitField(key, BitFieldSubCommands.create().get(BitFieldSubCommands.BitFieldType.unsigned(dayOfMonth)).valueAt(0));
+        if (bitField == null || bitField.isEmpty()) {
+            return Result.ok(0);
+        }
+        Long num = bitField.get(0);
+        if (num == null) {
+            return Result.ok(0);
+        }
+        int count = 0;
+        while (true) {
+            if ((num & 1) == 0) {
+                //未签到 结束
+                break;
+            } else {
+                count++;
+            }
+            num = num >> 1;
+        }
+        return Result.ok(count);
     }
 
     private User createUserWithPhone(String phone) {
         User user = new User();
         user.setPhone(phone);
-        user.setNickName(USER_NICK_NAME_PREFIX+RandomUtil.randomString(10));
+        user.setNickName(USER_NICK_NAME_PREFIX + RandomUtil.randomString(10));
         save(user);
         return user;
     }
